@@ -29,21 +29,30 @@ const YOBIBYTE: u128 = u128::pow(KIBIBYTE, 8);
 #[clap(disable_help_flag=true)]
 #[command(version, about, long_about = None)]
 struct Cli {
+
+    /// List of directories
     #[clap(value_parser, num_args = 1.., value_delimiter=' ')]
     files: Vec<String>,
 
+    /// Colour files/folders by type
     #[clap(long, short, action=ArgAction::SetTrue, default_value_t=true)]
     colourize: bool,
     
+    /// Show file sizes in a human readable format
     #[clap(long, short, action=ArgAction::SetTrue)]
     human: bool,
 
+    /// Print long form output
     #[clap(long, short, action=ArgAction::SetTrue)]
     long: bool,
 
+
+    /// Print all items in directory
     #[clap(long, short, action=ArgAction::SetTrue)]
     all: bool,
 
+
+    /// Print help message
     #[clap(long, action=ArgAction::HelpLong)]
     help: Option<bool>,
 }
