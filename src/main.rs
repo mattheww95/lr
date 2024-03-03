@@ -3,8 +3,9 @@
 //! This is by no means a replacement for ls, but it is an initial way to help learn rust better.
 //! I do not think anyone should use this over ls, however I do plan on adding some useful utility e.g. listing files in an FTP site
 //!
+use std::fs::DirEntry;
 use chrono::NaiveDateTime;
-use std::fs::{DirEntry, FileType};
+use std::fs::{FileType};
 use nix::unistd::{Group, Gid, User, Uid};
 use colored::Colorize;
 use std::os::unix::fs::MetadataExt;
@@ -113,7 +114,38 @@ struct Defaults {
 
 
 impl DirectoryItem<'_>  {
-    fn new<'a>(path: DirEntry, defaults: &'a Defaults) -> DirectoryItem {
+    fn from_file<'a>(path: &Path, defaults: &'a Defaults) -> DirectoryItem<'a> {
+        let path_buf= path;
+        let metadata = fs::metadata(path).unwrap();
+        let file_type = DirectoryItem::file_type(metadata.file_type());
+        let mode = metadata.permissions().mode();
+        let mut executable = false;
+        if mode & 0o001 == 0o1 {
+            executable = true;
+        }
+        let group = Group::from_gid(Gid::from_raw(metadata.gid())).unwrap().unwrap();
+        let user = User::from_uid(Uid::from_raw(metadata.uid())).unwrap().unwrap();
+        let nlink = metadata.nlink();
+        let time = metadata.ctime();
+        let size = metadata.size();
+        DirectoryItem{
+            file_type: file_type,
+            file_name: path_buf.file_name().unwrap().to_str().unwrap().to_string(),
+            time: time,
+            nlink: nlink,
+            mode: mode,
+            group: group,
+            size: size as u128,
+            user:user,
+            executable: executable,
+            path_abs: fs::canonicalize(path).unwrap().display().to_string(),
+            path_disp: path_buf.display().to_string(),
+            defaults: defaults,
+        }
+
+    }
+
+    fn from_dir_entry<'a>(path: DirEntry, defaults: &'a Defaults) -> DirectoryItem<'a> {
 
         let path_buf= path.path();
         let metadata = path.metadata().unwrap();
@@ -286,7 +318,7 @@ impl DirectoryItem<'_>  {
 }
 
 
-fn list_contents(dir: &Path, defaults: &Defaults) {
+fn list_contents(dir: &Path, defaults: &Defaults) -> () {
     if dir.is_dir() {
         let paths = fs::read_dir(dir).unwrap();
 
@@ -296,7 +328,7 @@ fn list_contents(dir: &Path, defaults: &Defaults) {
             if !defaults.all && data.file_name().to_str().unwrap().starts_with(".") {
                 continue;
             }
-            let new_value = DirectoryItem::new(data, defaults);
+            let new_value = DirectoryItem::from_dir_entry(data, defaults);
             if defaults.long_form{
                 new_value.print_long()
             }else {
@@ -306,7 +338,15 @@ fn list_contents(dir: &Path, defaults: &Defaults) {
         if !defaults.long_form {
             println!();
         }
+        return ();
     }
+    let file = DirectoryItem::from_file(dir, defaults);
+    if defaults.long_form {
+        file.print_long();
+    }else {
+        println!("{}", file.file_path());
+    }
+    return ();
 }
 
 fn main(){
