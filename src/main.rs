@@ -98,7 +98,13 @@ struct DirectoryItem <'a>{
     defaults: &'a Defaults,
 }
 
+
+/// Defaults arguments passed in
 struct Defaults {
+    /// colourize: Denote if displayed values should be colourized
+    /// human_readable: Marking if size values should be displayed in a human readable format
+    /// long_form: list directories in long form
+    /// all: Bool denoting if full path value should be displayed
     colourize: bool,
     human_readable: bool,
     long_form: bool,
@@ -323,4 +329,17 @@ fn convert_units(){
     assert_eq!("1ZiB", DirectoryItem::convert_units(EXBIBYTE));
     assert_eq!("1YiB", DirectoryItem::convert_units(ZEBIBYTE));
     assert_eq!("1YiB wtf... how?", DirectoryItem::convert_units(YOBIBYTE));
+}
+
+
+#[test]
+fn permissions_triplet(){
+    assert_eq!("---", DirectoryItem::permissions_triplet(0));
+    assert_eq!("--x", DirectoryItem::permissions_triplet(1));
+    assert_eq!("-w-", DirectoryItem::permissions_triplet(2));
+    assert_eq!("-wx", DirectoryItem::permissions_triplet(3));
+    assert_eq!("r--", DirectoryItem::permissions_triplet(4));
+    assert_eq!("r-x", DirectoryItem::permissions_triplet(5));
+    assert_eq!("rw-", DirectoryItem::permissions_triplet(6));
+    assert_eq!("rwx", DirectoryItem::permissions_triplet(7));
 }
