@@ -31,11 +31,11 @@ const YOBIBYTE: u128 = u128::pow(KIBIBYTE, 8);
 struct Cli {
 
     /// List of directories
-    #[clap(value_parser, num_args = 1.., value_delimiter=' ')]
+    #[clap(value_parser, num_args = 1.., value_delimiter=' ', default_value="./")]
     files: Vec<String>,
 
-    /// Colour files/folders by type
-    #[clap(long, short, action=ArgAction::SetTrue, default_value_t=true)]
+    /// Colour files/folders by type, specify to disable colouring
+    #[clap(long, short, action=ArgAction::SetFalse, default_value_t=true)]
     colourize: bool,
     
     /// Show file sizes in a human readable format
@@ -167,7 +167,11 @@ impl DirectoryItem<'_>  {
 
     fn coloured_paths(&self, display: &str) -> String {
         let out_str = match self.file_type {
-            DeviceType::Symlink => format!("{} -> {}", self.path_disp.bright_cyan(), self.path_abs),
+            DeviceType::Symlink => if self.defaults.long_form {
+                format!("{} -> {}", self.path_disp.bright_cyan(), self.path_abs)
+            } else {  
+                format!("{}", self.path_disp.bright_cyan())
+            },
             DeviceType::BlockDevice => format!("{}", display.bright_yellow()),
             DeviceType::CharDevice => format!("{}", display.bright_magenta()),
             DeviceType::Fifo => format!("{}", display),
@@ -185,7 +189,11 @@ impl DirectoryItem<'_>  {
 
     fn normal_paths(&self, display: &str) -> String {
         let out_str = match self.file_type {
-            DeviceType::Symlink => format!("{} -> {}", display, self.path_abs),
+            DeviceType::Symlink => if self.defaults.long_form {
+                format!("{} -> {}", self.path_disp, self.path_abs)
+            } else {  
+                format!("{}", self.path_disp)
+            },
             DeviceType::BlockDevice => format!("{}", display),
             DeviceType::CharDevice => format!("{}", display),
             DeviceType::Fifo => format!("{}", display),
