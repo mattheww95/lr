@@ -219,7 +219,7 @@ impl DirectoryItem<'_>  {
             DeviceType::Symlink => if self.defaults.long_form {
                 format!("{} -> {}", self.path_disp, self.path_abs)
             } else {  
-                format!("{}", self.path_disp)
+                format!("{}", display)
             },
             DeviceType::BlockDevice => format!("{}", display),
             DeviceType::CharDevice => format!("{}", display),
