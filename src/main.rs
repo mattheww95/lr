@@ -207,10 +207,7 @@ impl DirectoryItem<'_>  {
         if self.defaults.long_form {
             display = &self.path_abs;
         }
-
-        
         let func_colour = self.pick_colour();
-
         return self.display_path(&func_colour(display));
 
     }
@@ -265,12 +262,12 @@ impl DirectoryItem<'_>  {
             e if e < KIBIBYTE => format!("{}B", e),
             e if e < MEBIBYTE => format!("{}KiB", e / KIBIBYTE),
             e if e < GIBIBYTE => format!("{}MiB", e / MEBIBYTE),
-            e if e < TEBIBYTE => format!("{}TiB", e / GIBIBYTE),
-            e if e < PEBIBYTE => format!("{}PiB", e / TEBIBYTE),
-            e if e < EXBIBYTE => format!("{}EiB", e / PEBIBYTE),
-            e if e < ZEBIBYTE => format!("{}ZiB", e / EXBIBYTE),
-            e if e < YOBIBYTE => format!("{}YiB", e / ZEBIBYTE),
-            e @ _ => format!("{}YiB wtf... how?", e / YOBIBYTE),
+            e if e < TEBIBYTE => format!("{}GiB", e / GIBIBYTE),
+            e if e < PEBIBYTE => format!("{}TiB", e / TEBIBYTE),
+            e if e < EXBIBYTE => format!("{}PiB", e / PEBIBYTE),
+            e if e < ZEBIBYTE => format!("{}EiB", e / EXBIBYTE),
+            e if e < YOBIBYTE => format!("{}ZiB", e / ZEBIBYTE),
+            e @ _ => format!("{}YiB what... how?", e / YOBIBYTE),
         };
         return magnitude
     }
@@ -368,12 +365,12 @@ fn convert_units(){
     assert_eq!("4B", DirectoryItem::convert_units(4));
     assert_eq!("1KiB", DirectoryItem::convert_units(KIBIBYTE));
     assert_eq!("1MiB", DirectoryItem::convert_units(MEBIBYTE));
-    assert_eq!("1TiB", DirectoryItem::convert_units(GIBIBYTE));
-    assert_eq!("1PiB", DirectoryItem::convert_units(TEBIBYTE));
-    assert_eq!("1EiB", DirectoryItem::convert_units(PEBIBYTE));
-    assert_eq!("1ZiB", DirectoryItem::convert_units(EXBIBYTE));
-    assert_eq!("1YiB", DirectoryItem::convert_units(ZEBIBYTE));
-    assert_eq!("1YiB wtf... how?", DirectoryItem::convert_units(YOBIBYTE));
+    assert_eq!("1GiB", DirectoryItem::convert_units(GIBIBYTE));
+    assert_eq!("1TiB", DirectoryItem::convert_units(TEBIBYTE));
+    assert_eq!("1PiB", DirectoryItem::convert_units(PEBIBYTE));
+    assert_eq!("1EiB", DirectoryItem::convert_units(EXBIBYTE));
+    assert_eq!("1ZiB", DirectoryItem::convert_units(ZEBIBYTE));
+    assert_eq!("1YiB what... how?", DirectoryItem::convert_units(YOBIBYTE));
 }
 
 
