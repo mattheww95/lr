@@ -114,6 +114,7 @@ struct Defaults {
 
 
 impl DirectoryItem<'_>  {
+    /// Create a directory item object initializing it with path e.g. a single file
     fn from_file<'a>(path: &Path, defaults: &'a Defaults) -> DirectoryItem<'a> {
         let path_buf= path;
         let metadata = fs::metadata(path).unwrap();
@@ -145,8 +146,10 @@ impl DirectoryItem<'_>  {
 
     }
 
+    /// Create a DirectoryItem using DirEntry (from read_dir) to initialize the struct
+    /// path: A Direntry object
+    /// defaults a list of default settings
     fn from_dir_entry<'a>(path: DirEntry, defaults: &'a Defaults) -> DirectoryItem<'a> {
-
         let path_buf= path.path();
         let metadata = path.metadata().unwrap();
         let file_type = DirectoryItem::file_type(metadata.file_type());
@@ -179,7 +182,6 @@ impl DirectoryItem<'_>  {
 
     fn time(&self) -> String {
         let d = NaiveDateTime::from_timestamp_opt(self.time, 0);
-
         let time_stamp_str = d.unwrap().format("%Y %b %d %H:%M").to_string();
         return time_stamp_str;
     }
