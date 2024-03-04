@@ -7,7 +7,7 @@ use std::fs::DirEntry;
 use chrono::NaiveDateTime;
 use std::fs::{FileType};
 use nix::unistd::{Group, Gid, User, Uid};
-use colored::Colorize;
+use colored::{Colorize, ColoredString};
 use std::os::unix::fs::MetadataExt;
 use std::fs;
 use std::path::Path;
@@ -184,42 +184,38 @@ impl DirectoryItem<'_>  {
         return time_stamp_str;
     }
 
+    fn pick_colour<'a>(&self) -> fn(&'a str) -> ColoredString {
+        let out_fn = match &self.file_type {
+            _a if !self.defaults.colourize => Colorize::normal,
+            DeviceType::Symlink => Colorize::bright_cyan,
+            DeviceType::BlockDevice => Colorize::bright_yellow,
+            DeviceType::CharDevice => Colorize::bright_magenta,
+            DeviceType::Fifo => Colorize::normal,
+            DeviceType::Socket => Colorize::normal,
+            DeviceType::Dir => Colorize::bright_blue,
+            _ => if self.executable {
+                Colorize::bright_green
+            }else{
+                Colorize::normal
+            }
+        };
+        return out_fn
+    }
+
     fn file_path(&self) -> String {
         let mut display = &self.file_name;
         if self.defaults.long_form {
             display = &self.path_abs;
         }
 
-        if self.defaults.colourize {
-            return self.coloured_paths(&display);
-        }
-        return self.normal_paths(&display);
+        
+        let func_colour = self.pick_colour();
+
+        return self.display_path(&func_colour(display));
 
     }
 
-    fn coloured_paths(&self, display: &str) -> String {
-        let out_str = match self.file_type {
-            DeviceType::Symlink => if self.defaults.long_form {
-                format!("{} -> {}", self.path_disp.bright_cyan(), self.path_abs)
-            } else {  
-                format!("{}", self.path_disp.bright_cyan())
-            },
-            DeviceType::BlockDevice => format!("{}", display.bright_yellow()),
-            DeviceType::CharDevice => format!("{}", display.bright_magenta()),
-            DeviceType::Fifo => format!("{}", display),
-            DeviceType::Socket => format!("{}", display),
-            DeviceType::Dir => format!("{}", display.bright_blue()),
-            _ => if self.executable { 
-                        format!("{}", display.bright_green())
-                    } else {
-                        format!("{}", display)
-                    }
-            };
-        return out_str;
-
-    }
-
-    fn normal_paths(&self, display: &str) -> String {
+    fn display_path(&self, display: &ColoredString) -> String {
         let out_str = match self.file_type {
             DeviceType::Symlink => if self.defaults.long_form {
                 format!("{} -> {}", self.path_disp, self.path_abs)
@@ -235,6 +231,7 @@ impl DirectoryItem<'_>  {
             };
             return out_str;
     }
+
 
     fn file_type(f_type: FileType) -> DeviceType {
         let ftype = match f_type {
