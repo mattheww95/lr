@@ -158,8 +158,29 @@ impl DirectoryItem<'_>  {
         if mode & 0o001 == 0o1 {
             executable = true;
         }
-        let group = Group::from_gid(Gid::from_raw(metadata.gid())).unwrap().unwrap();
-        let user = User::from_uid(Uid::from_raw(metadata.uid())).unwrap().unwrap();
+        let group_id = Gid::from_raw(metadata.gid());
+        let group = match Group::from_gid(group_id).unwrap() {
+            Some(group) => group,
+            None => Group {
+                name: group_id.to_string(),
+                passwd: std::ffi::CString::from(c""),
+                gid: group_id,
+                mem: Vec::new(),
+            },
+        };
+        let user_id = Uid::from_raw(metadata.uid());
+        let user = match User::from_uid(user_id).unwrap() {
+            Some(user) => user,
+            None => User {
+                name: user_id.to_string(),
+                passwd: std::ffi::CString::from(c""),
+                uid: user_id,
+                gid: group_id,
+                gecos: std::ffi::CString::from(c""),
+                dir: std::path::PathBuf::new(),
+                shell: std::path::PathBuf::new(),
+            },
+        };
         let nlink = metadata.nlink();
         let time = metadata.ctime();
         let size = metadata.size();
