@@ -10,6 +10,7 @@ use nix::unistd::{Group, Gid, User, Uid};
 use colored::{Colorize, ColoredString};
 use std::os::unix::fs::MetadataExt;
 use std::fs;
+use term_size;
 use std::path::Path;
 use std::os::unix::fs::{PermissionsExt, FileTypeExt};
 use clap::{Parser, ArgAction};
@@ -354,27 +355,33 @@ fn list_contents<'a>(dir: &'a Path, defaults: &'a Defaults) -> Vec<Box<Directory
             }
             let new_value = Box::new(DirectoryItem::from_dir_entry(data, defaults));
             outputs.push(new_value);
-            //if defaults.long_form{
-            //    new_value.print_long()
-            //}else {
-            //    print!("{} ", new_value.file_path());
-            //}
         }
-        //if !defaults.long_form {
-        //    println!();
-        //}
-        //return ();
     }else{
         let file = Box::new(DirectoryItem::from_file(dir, defaults));
         outputs.push(file);
     }
-    //if defaults.long_form {
-    //    file.print_long();
-    //}else {
-    //    println!("{}", file.file_path());
-    //}
     return outputs;
 }
+
+
+/// Calculate the number of entries to show per a line
+fn calculate_column_width(col_width: usize, longest_char: usize) -> usize {
+    if col_width == 0 {
+        return 1
+    }
+    if longest_char > col_width {
+        return 1
+    }
+
+    let mut modifier = 0;
+    if col_width % longest_char != 0 {
+        modifier = 1;
+    }
+
+    let values_per_column = (col_width / longest_char) + modifier;
+    return values_per_column;
+}
+
 
 fn main(){
 
@@ -392,18 +399,37 @@ fn main(){
     }
 
     // Sort or manipulate outputs as needed
-    let longest_val_padding = 2;
-    let mut longest_value = outputs.iter().map(|x| (*x).file_name.len()).max().unwrap();
-    longest_value = longest_value + longest_val_padding;
+    let longest_value = outputs.iter().map(|x| (*x).file_name.len()).max().unwrap();
+    let longest_val_padded = longest_value + 10;
+
+    // Get Term size for creating the output file
+    #[allow(unused_assignments)]
+    let mut width: usize = 0;
+    if let Some((w, _)) = term_size::dimensions() {
+        width = w;
+    } else {
+        panic!()
+    }
+
+
+    let files_per_row = calculate_column_width(width, longest_val_padded);
+    // Calculate columns
+
     // Print outpus
+    let mut idx = 1;
     for di in outputs.iter() {
         if defaults.long_form {
             (*di).print_long();
         }else{
-            print!("{: <width$} ", (*di).file_path(), width = longest_value);
+            print!("{:<width$} ", (*di).file_path(), width = longest_val_padded);
+            if idx % files_per_row == 0 {
+                println!();
+            }
         }
+        idx+=1
     }
-    if !defaults.long_form {
+
+    if !defaults.long_form && (idx - 1) % files_per_row != 0 {
         println!();
     }
 
