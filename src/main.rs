@@ -369,12 +369,13 @@ fn calculate_column_width(col_width: usize, longest_char: usize) -> usize {
     if col_width == 0 {
         return 1
     }
-    if longest_char > col_width {
+
+    if longest_char > (col_width / 2) {
         return 1
     }
 
     let mut modifier = 0;
-    if col_width % longest_char != 0 {
+    if col_width % longest_char == 0 {
         modifier = 1;
     }
 
@@ -382,13 +383,22 @@ fn calculate_column_width(col_width: usize, longest_char: usize) -> usize {
     return values_per_column;
 }
 
+/// Strings were not being padded nicely with the added control charactars
+fn pad_value(input: &DirectoryItem, length: usize){
+    // TODO need to add file name length property to the class
+    // so that the control charactars do not get counted and the
+    // colourize property is respected
+    print!("{}", input.file_path());
+    let spaces = " ".repeat(length - input.file_name.len());
+    print!("{}", spaces);
+}
 
 fn main(){
 
     let args = Cli::parse();
     let defaults = Defaults{
         colourize: args.colourize, 
-        human_readable: args.human, 
+        human_readable: args.human,
         long_form: args.long,
         all: args.all};
 
@@ -399,8 +409,8 @@ fn main(){
     }
 
     // Sort or manipulate outputs as needed
-    let longest_value = outputs.iter().map(|x| (*x).file_name.len()).max().unwrap();
-    let longest_val_padded = longest_value + 10;
+    let mut longest_value = outputs.iter().map(|x| (*x).file_name.len()).max().unwrap();
+    longest_value = longest_value + 1; // Adding 1 to make room for the printed space
 
     // Get Term size for creating the output file
     #[allow(unused_assignments)]
@@ -411,17 +421,17 @@ fn main(){
         panic!()
     }
 
+    // Calculate how many values to print
+    let files_per_row = calculate_column_width(width, longest_value);
 
-    let files_per_row = calculate_column_width(width, longest_val_padded);
-    // Calculate columns
-
-    // Print outpus
+    // Print outputs
     let mut idx = 1;
     for di in outputs.iter() {
         if defaults.long_form {
             (*di).print_long();
         }else{
-            print!("{:<width$} ", (*di).file_path(), width = longest_val_padded);
+            //print!("{: <width$}", (*di).file_name, width = longest_value);
+            pad_value(&(*di), longest_value);
             if idx % files_per_row == 0 {
                 println!();
             }
@@ -435,6 +445,13 @@ fn main(){
 
 }
 
+
+
+#[test]
+fn column_widths(){
+    assert_eq!(calculate_column_width(10, 5), 2);
+    assert_eq!(calculate_column_width(10, 6), 1);
+}
 
 
 #[test]
