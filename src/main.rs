@@ -230,6 +230,10 @@ impl DirectoryItem<'_>  {
         return out_fn
     }
 
+    fn file_name_length(&self) -> usize {
+        self.file_name.len()
+    }
+
     fn file_path(&self) -> String {
         let mut display = &self.file_name;
         if self.defaults.long_form {
@@ -374,20 +378,12 @@ fn calculate_column_width(col_width: usize, longest_char: usize) -> usize {
         return 1
     }
 
-    let mut modifier = 0;
-    if col_width % longest_char == 0 {
-        modifier = 1;
-    }
-
-    let values_per_column = (col_width / longest_char) + modifier;
+    let values_per_column = col_width / longest_char;
     return values_per_column;
 }
 
 /// Strings were not being padded nicely with the added control charactars
 fn pad_value(input: &DirectoryItem, length: usize){
-    // TODO need to add file name length property to the class
-    // so that the control charactars do not get counted and the
-    // colourize property is respected
     print!("{}", input.file_path());
     let spaces = " ".repeat(length - input.file_name.len());
     print!("{}", spaces);
@@ -409,7 +405,7 @@ fn main(){
     }
 
     // Sort or manipulate outputs as needed
-    let mut longest_value = outputs.iter().map(|x| (*x).file_name.len()).max().unwrap();
+    let mut longest_value = outputs.iter().map(|x| (*x).file_name_length()).max().unwrap();
     longest_value = longest_value + 1; // Adding 1 to make room for the printed space
 
     // Get Term size for creating the output file
@@ -430,7 +426,6 @@ fn main(){
         if defaults.long_form {
             (*di).print_long();
         }else{
-            //print!("{: <width$}", (*di).file_name, width = longest_value);
             pad_value(&(*di), longest_value);
             if idx % files_per_row == 0 {
                 println!();
