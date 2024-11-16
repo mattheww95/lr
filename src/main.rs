@@ -10,6 +10,7 @@ use nix::unistd::{Group, Gid, User, Uid};
 use colored::{Colorize, ColoredString};
 use std::os::unix::fs::MetadataExt;
 use std::fs;
+use term_size;
 use std::path::Path;
 use std::os::unix::fs::{PermissionsExt, FileTypeExt};
 use clap::{Parser, ArgAction};
@@ -38,7 +39,7 @@ struct Cli {
     /// Colour files/folders by type, specify to disable colouring
     #[clap(long, short, action=ArgAction::SetFalse, default_value_t=true)]
     colourize: bool,
-    
+
     /// Show file sizes in a human readable format
     #[clap(long, short, action=ArgAction::SetTrue)]
     human: bool,
@@ -60,6 +61,7 @@ struct Cli {
 
 
 /// Different device types represented e.g. sockets, pipes files etc are denoted here
+#[derive(Debug, Clone)]
 enum DeviceType{
     Dir,
     BlockDevice,
@@ -72,6 +74,7 @@ enum DeviceType{
 
 
 /// Each DirectoryItem is represted here using different parts sliced from the DirEntry struct
+#[derive(Debug, Clone)]
 struct DirectoryItem <'a>{
     /// path_abs: Absolute path to file
     /// path_disp: They way the path is displayed e.g. passed to the program
@@ -101,6 +104,7 @@ struct DirectoryItem <'a>{
 
 
 /// Defaults arguments passed in
+#[derive(Debug, Clone)]
 struct Defaults {
     /// colourize: Denote if displayed values should be colourized
     /// human_readable: Marking if size values should be displayed in a human readable format
@@ -168,7 +172,8 @@ impl DirectoryItem<'_>  {
                 mem: Vec::new(),
             },
         };
-        let user_id = Uid::from_raw(metadata.uid());
+        let from_raw = Uid::from_raw(metadata.uid());
+        let user_id = from_raw;
         let user = match User::from_uid(user_id).unwrap() {
             Some(user) => user,
             None => User {
@@ -223,6 +228,10 @@ impl DirectoryItem<'_>  {
             }
         };
         return out_fn
+    }
+
+    fn file_name_length(&self) -> usize {
+        self.file_name.len()
     }
 
     fn file_path(&self) -> String {
@@ -335,7 +344,10 @@ impl DirectoryItem<'_>  {
 }
 
 
-fn list_contents(dir: &Path, defaults: &Defaults) -> () {
+//fn list_contents<'a>(dir: &'a Path, defaults: &'a Defaults) -> Vec<Box<DirectoryItem<'a>>> {
+fn list_contents<'a>(dir: &'a Path, defaults: &'a Defaults) -> Vec<Box<DirectoryItem<'a>>> {
+
+    let mut outputs: Vec<Box<DirectoryItem>> = Vec::new();
     if dir.is_dir() {
         let paths = fs::read_dir(dir).unwrap();
 
@@ -345,25 +357,36 @@ fn list_contents(dir: &Path, defaults: &Defaults) -> () {
             if !defaults.all && data.file_name().to_str().unwrap().starts_with(".") {
                 continue;
             }
-            let new_value = DirectoryItem::from_dir_entry(data, defaults);
-            if defaults.long_form{
-                new_value.print_long()
-            }else {
-                print!("{} ", new_value.file_path());
-            }
+            let new_value = Box::new(DirectoryItem::from_dir_entry(data, defaults));
+            outputs.push(new_value);
         }
-        if !defaults.long_form {
-            println!();
-        }
-        return ();
+    }else{
+        let file = Box::new(DirectoryItem::from_file(dir, defaults));
+        outputs.push(file);
     }
-    let file = DirectoryItem::from_file(dir, defaults);
-    if defaults.long_form {
-        file.print_long();
-    }else {
-        println!("{}", file.file_path());
+    return outputs;
+}
+
+
+/// Calculate the number of entries to show per a line
+fn calculate_column_width(col_width: usize, longest_char: usize) -> usize {
+    if col_width == 0 {
+        return 1
     }
-    return ();
+
+    if longest_char > (col_width / 2) {
+        return 1
+    }
+
+    let values_per_column = col_width / longest_char;
+    return values_per_column;
+}
+
+/// Strings were not being padded nicely with the added control charactars
+fn pad_value(input: &DirectoryItem, length: usize){
+    print!("{}", input.file_path());
+    let spaces = " ".repeat(length - input.file_name.len());
+    print!("{}", spaces);
 }
 
 fn main(){
@@ -371,16 +394,59 @@ fn main(){
     let args = Cli::parse();
     let defaults = Defaults{
         colourize: args.colourize, 
-        human_readable: args.human, 
+        human_readable: args.human,
         long_form: args.long,
         all: args.all};
 
+    let mut outputs: Vec<Box<DirectoryItem>> = Vec::new();
     for path in args.files.iter(){
-        list_contents(path.as_ref(), &defaults);
+        let mut out = list_contents(path.as_ref(), &defaults);
+        outputs.append(&mut out);
     }
-    
+
+    // Sort or manipulate outputs as needed
+    let mut longest_value = outputs.iter().map(|x| (*x).file_name_length()).max().unwrap();
+    longest_value = longest_value + 1; // Adding 1 to make room for the printed space
+
+    // Get Term size for creating the output file
+    #[allow(unused_assignments)]
+    let mut width: usize = 0;
+    if let Some((w, _)) = term_size::dimensions() {
+        width = w;
+    } else {
+        panic!()
+    }
+
+    // Calculate how many values to print
+    let files_per_row = calculate_column_width(width, longest_value);
+
+    // Print outputs
+    let mut idx = 1;
+    for di in outputs.iter() {
+        if defaults.long_form {
+            (*di).print_long();
+        }else{
+            pad_value(&(*di), longest_value);
+            if idx % files_per_row == 0 {
+                println!();
+            }
+        }
+        idx+=1
+    }
+
+    if !defaults.long_form && (idx - 1) % files_per_row != 0 {
+        println!();
+    }
+
 }
 
+
+
+#[test]
+fn column_widths(){
+    assert_eq!(calculate_column_width(10, 5), 2);
+    assert_eq!(calculate_column_width(10, 6), 1);
+}
 
 
 #[test]
