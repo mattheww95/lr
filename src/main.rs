@@ -247,7 +247,7 @@ impl DirectoryItem<'_>  {
     fn display_path(&self, display: &ColoredString) -> String {
         let out_str = match self.file_type {
             DeviceType::Symlink => if self.defaults.long_form {
-                format!("{} -> {}", self.path_disp, self.path_abs)
+                format!("{} -> {}", display, self.path_abs)
             } else {  
                 format!("{}", display)
             },
@@ -426,6 +426,7 @@ fn main(){
 
 
     // Get relevant values needed to sort or pad outputs
+    // TODO These values should be set when iterating the directorys in the future
     let mut longest_value: usize = 0;
     let mut files_per_row: usize = 0;
     let mut largest_file: usize = 0;
