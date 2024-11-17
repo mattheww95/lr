@@ -11,6 +11,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - Added tabular output for long form outputs
 
+- Added sorting option for file size
+
+- Added sorting option for creation time
+
+- Added option to reverse sort output
+
+- Added option to display numeric ids instead of named ones
+
 ### Fixed
 
 - Fixed panic when path does not exist.

@@ -36,7 +36,7 @@ struct Cli {
     #[clap(value_parser, num_args = 1.., value_delimiter=' ', default_value=".")]
     files: Vec<String>,
 
-    /// Colour files/folders by type, specify to disable colouring
+    /// Do not colour files/folders by type.
     #[clap(long, short, action=ArgAction::SetFalse, default_value_t=true)]
     colourize: bool,
 
@@ -53,6 +53,21 @@ struct Cli {
     #[clap(long, short, action=ArgAction::SetTrue)]
     all: bool,
 
+    /// Sort output files by size
+    #[clap(short='S', action=ArgAction::SetTrue)]
+    size: bool,
+
+    /// Sort output files by time last modified
+    #[clap(short='t', action=ArgAction::SetTrue)]
+    sort_time: bool,
+
+    /// Reverse output sorted or otherwise
+    #[clap(short, long, action=ArgAction::SetTrue)]
+    reverse: bool,
+
+    /// like -l, but list numeric user and group IDs
+    #[clap(short='n',long="numeric-uid-gid", action=ArgAction::SetTrue)]
+    numeric_uid_gid: bool,
 
     /// Print help message
     #[clap(long, action=ArgAction::HelpLong)]
@@ -76,6 +91,8 @@ enum DeviceType{
 /// Each DirectoryItem is represted here using different parts sliced from the DirEntry struct
 #[derive(Debug, Clone)]
 struct DirectoryItem <'a>{
+    /// TODO uid, user, gid and group fields should be Options to prevent having
+    ///      to set arguments unnessecarily
     /// path_abs: Absolute path to file
     /// path_disp: They way the path is displayed e.g. passed to the program
     /// file_name: The basename of the file or directory
@@ -96,8 +113,10 @@ struct DirectoryItem <'a>{
     nlink: u64,
     mode: u32,
     group: Group,
+    gid: u32,
     size: u128,
     user: User,
+    uid: u32,
     executable: bool,
     defaults: &'a Defaults,
 }
@@ -109,10 +128,12 @@ struct Defaults {
     /// colourize: Denote if displayed values should be colourized
     /// human_readable: Marking if size values should be displayed in a human readable format
     /// long_form: list directories in long form
+    /// numeric_ids: display uids and gids in their numeric form
     /// all: Bool denoting if full path value should be displayed
     colourize: bool,
     human_readable: bool,
     long_form: bool,
+    numeric_ids: bool,
     all: bool,
 }
 
@@ -128,8 +149,10 @@ impl DirectoryItem<'_>  {
         if mode & 0o001 == 0o1 {
             executable = true;
         }
-        let group = Group::from_gid(Gid::from_raw(metadata.gid())).unwrap().unwrap();
-        let user = User::from_uid(Uid::from_raw(metadata.uid())).unwrap().unwrap();
+        let gid = metadata.gid();
+        let uid = metadata.uid();
+        let group = Group::from_gid(Gid::from_raw(gid)).unwrap().unwrap();
+        let user = User::from_uid(Uid::from_raw(uid)).unwrap().unwrap();
         let nlink = metadata.nlink();
         let time = metadata.ctime();
         let size = metadata.size();
@@ -140,8 +163,10 @@ impl DirectoryItem<'_>  {
             nlink: nlink,
             mode: mode,
             group: group,
+            gid: gid,
             size: size as u128,
             user:user,
+            uid: uid,
             executable: executable,
             path_abs: fs::canonicalize(path).unwrap().display().to_string(),
             path_disp: path_buf.display().to_string(),
@@ -196,8 +221,10 @@ impl DirectoryItem<'_>  {
             nlink: nlink,
             mode: mode,
             group: group,
+            gid: metadata.gid(),
             size: size as u128,
-            user:user,
+            user: user,
+            uid: metadata.uid(),
             executable: executable,
             path_abs: fs::canonicalize(path_buf.clone()).unwrap().display().to_string(),
             path_disp: path_buf.clone().display().to_string(),
@@ -339,11 +366,19 @@ impl DirectoryItem<'_>  {
     }
 
     fn print_long(&self, file_size_pad: usize, group_pad: usize, user_pad: usize, inodes: usize) {
-        println!("{} {:<inode_p$} {:<gpad$} {:<upad$} {:<szpad$} {} {}",
+        if self.defaults.numeric_ids{
+            println!("{} {:<inode_p$} {:<gpad$} {:<upad$} {:<szpad$} {} {}",
+                 self.permissions_string(),
+                 self.nlink, self.gid, self.uid,
+                 self.size(), self.time(), self.file_path(), inode_p=inodes,
+                 gpad=group_pad, upad=user_pad, szpad=file_size_pad);
+        }else{
+            println!("{} {:<inode_p$} {:<gpad$} {:<upad$} {:<szpad$} {} {}",
                  self.permissions_string(),
                  self.nlink, self.group.name, self.user.name,
                  self.size(), self.time(), self.file_path(), inode_p=inodes,
                  gpad=group_pad, upad=user_pad, szpad=file_size_pad);
+        }
     }
 }
 
@@ -405,12 +440,14 @@ fn pad_value(input: &DirectoryItem, length: usize){
 
 
 fn main(){
-
+    // TODO Need to quote special charactars outputs
+    // TODO add author flag
     let args = Cli::parse();
     let defaults = Defaults{
         colourize: args.colourize, 
         human_readable: args.human,
         long_form: args.long,
+        numeric_ids: args.numeric_uid_gid,
         all: args.all};
 
     let mut outputs: Vec<Box<DirectoryItem>> = Vec::new();
@@ -427,6 +464,7 @@ fn main(){
 
     // Get relevant values needed to sort or pad outputs
     // TODO These values should be set when iterating the directorys in the future
+    // preventing the need for looping over everything else again...
     let mut longest_value: usize = 0;
     let mut files_per_row: usize = 0;
     let mut largest_file: usize = 0;
@@ -452,16 +490,41 @@ fn main(){
     }else{
         for val in outputs.iter() {
             let largest_file_t = (*val).size().len();
-            let largest_group_t = (*val).group.name.len();
-            let largest_user_t = (*val).user.name.len();
             let inodes_t = (*val).nlink;
             largest_file = max(largest_file_t, largest_file);
-            largest_group = max(largest_group_t, largest_group);
-            largest_user = max(largest_user_t, largest_user);
+            if defaults.numeric_ids{
+                let largest_group_t = (*val).group.name.len();
+                let largest_user_t = (*val).user.name.len();
+                largest_group = max(largest_group_t, largest_group);
+                largest_user = max(largest_user_t, largest_user);
+            }
             inodes = max(inodes_t, inodes);
         }
         // Get number of digits in the printed inodes representation
         inodes_u = (inodes.checked_ilog10().unwrap_or(0) + 1) as usize;
+        if defaults.numeric_ids{
+            largest_group = (largest_group.checked_ilog10().unwrap_or(0) + 1) as usize;
+            largest_user = (largest_user.checked_ilog10().unwrap_or(0) + 1) as usize;
+        }
+    }
+
+
+    // Perform sorting options here
+    if args.size{
+        outputs.sort_by_key(|a| (*a).size());
+    }
+
+    if args.sort_time {
+        outputs.sort_by_key(|a| (*a).time);
+    }
+
+    if args.reverse {
+        outputs.reverse();
+    }
+
+    // Additional outputs needed to be printed e.g. for long form
+    if defaults.long_form {
+        println!("total {}", outputs.len());
     }
 
     // Print outputs
