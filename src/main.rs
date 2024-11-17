@@ -338,9 +338,23 @@ impl DirectoryItem<'_>  {
         }
     }
 
-    fn print_long(&self) {
-        println!("{} {} {} {} {} {} {}", self.permissions_string(), self.nlink, self.group.name, self.user.name, self.size(), self.time(), self.file_path());
+    fn print_long(&self, file_size_pad: usize, group_pad: usize, user_pad: usize, inodes: usize) {
+        println!("{} {:<inode_p$} {:<gpad$} {:<upad$} {:<szpad$} {} {}",
+                 self.permissions_string(),
+                 self.nlink, self.group.name, self.user.name,
+                 self.size(), self.time(), self.file_path(), inode_p=inodes,
+                 gpad=group_pad, upad=user_pad, szpad=file_size_pad);
     }
+}
+
+
+fn max<T>(v1: T, v2: T) -> T
+where T:  Ord {
+   if v1 > v2 {
+       v1
+   }else {
+       v2
+   }
 }
 
 
@@ -389,6 +403,7 @@ fn pad_value(input: &DirectoryItem, length: usize){
     print!("{}", spaces);
 }
 
+
 fn main(){
 
     let args = Cli::parse();
@@ -409,28 +424,50 @@ fn main(){
         outputs.append(&mut out);
     }
 
-    let longest_value: usize =  match outputs.iter().map(|x| (*x).file_name_length()).max(){
-        Some(x) => x + 1, // Add padding to variable for longest entry
-        None => return ()
-    };
 
-    // Get Term size for creating the output file
-    #[allow(unused_assignments)]
-    let mut width: usize = 0;
-    if let Some((w, _)) = term_size::dimensions() {
-        width = w;
-    } else {
-        panic!()
+    // Get relevant values needed to sort or pad outputs
+    let mut longest_value: usize = 0;
+    let mut files_per_row: usize = 0;
+    let mut largest_file: usize = 0;
+    let mut largest_group: usize = 0;
+    let mut largest_user: usize = 0;
+    let mut inodes: u64 = 0;
+    let mut inodes_u: usize = 0;
+    if !defaults.long_form{
+        longest_value =  match outputs.iter().map(|x| (*x).file_name_length()).max(){
+            Some(x) => x + 1, // Add padding to variable for longest entry
+            None => return (),
+        };
+
+        // Get Term size for creating the output file
+        #[allow(unused_assignments)]
+        let (width, _) = match term_size::dimensions() {
+            Some(x) => x,
+            None => panic!(),
+        };
+
+        // Calculate how many values to print
+        files_per_row = calculate_column_width(width, longest_value);
+    }else{
+        for val in outputs.iter() {
+            let largest_file_t = (*val).size().len();
+            let largest_group_t = (*val).group.name.len();
+            let largest_user_t = (*val).user.name.len();
+            let inodes_t = (*val).nlink;
+            largest_file = max(largest_file_t, largest_file);
+            largest_group = max(largest_group_t, largest_group);
+            largest_user = max(largest_user_t, largest_user);
+            inodes = max(inodes_t, inodes);
+        }
+        // Get number of digits in the printed inodes representation
+        inodes_u = (inodes.checked_ilog10().unwrap_or(0) + 1) as usize;
     }
-
-    // Calculate how many values to print
-    let files_per_row = calculate_column_width(width, longest_value);
 
     // Print outputs
     let mut idx = 1;
     for di in outputs.iter() {
         if defaults.long_form {
-            (*di).print_long();
+            (*di).print_long(largest_file, largest_group, largest_user, inodes_u);
         }else{
             pad_value(&(*di), longest_value);
             if idx % files_per_row == 0 {
