@@ -33,7 +33,7 @@ const YOBIBYTE: u128 = u128::pow(KIBIBYTE, 8);
 struct Cli {
 
     /// List of directories
-    #[clap(value_parser, num_args = 1.., value_delimiter=' ', default_value="./")]
+    #[clap(value_parser, num_args = 1.., value_delimiter=' ', default_value=".")]
     files: Vec<String>,
 
     /// Colour files/folders by type, specify to disable colouring
@@ -400,13 +400,19 @@ fn main(){
 
     let mut outputs: Vec<Box<DirectoryItem>> = Vec::new();
     for path in args.files.iter(){
-        let mut out = list_contents(path.as_ref(), &defaults);
+        let fp_path = Path::new(path);
+        if !fp_path.exists(){
+            eprintln!("Path does not exist: {}", fp_path.display());
+            continue;
+        }
+        let mut out = list_contents(fp_path, &defaults);
         outputs.append(&mut out);
     }
 
-    // Sort or manipulate outputs as needed
-    let mut longest_value = outputs.iter().map(|x| (*x).file_name_length()).max().unwrap();
-    longest_value = longest_value + 1; // Adding 1 to make room for the printed space
+    let longest_value: usize =  match outputs.iter().map(|x| (*x).file_name_length()).max(){
+        Some(x) => x + 1, // Add padding to variable for longest entry
+        None => return ()
+    };
 
     // Get Term size for creating the output file
     #[allow(unused_assignments)]
