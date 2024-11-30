@@ -5,7 +5,7 @@
 //!
 use std::fs::DirEntry;
 use chrono::NaiveDateTime;
-use std::fs::{FileType};
+use std::fs::FileType;
 use nix::unistd::{Group, Gid, User, Uid};
 use colored::{Colorize, ColoredString};
 use std::os::unix::fs::MetadataExt;
@@ -75,6 +75,44 @@ struct Cli {
 }
 
 
+/// This struct is created to track the largest elements required for later formatting
+#[allow(dead_code)]
+struct LargestItem{
+    longest_value: usize,
+    largest_file: usize,
+    largest_group: usize,
+    largest_user: usize,
+    inodes_u: usize,
+}
+
+impl LargestItem {
+    fn update_values(&mut self, item: &Box<DirectoryItem>, defaults: &Defaults) {
+
+        self.largest_file = max(item.size().len(), self.largest_file);
+
+        if defaults.numeric_ids{
+            let group = (item.group.name.len().checked_ilog10().unwrap_or(0) + 1) as usize;
+            let user =  (item.user.name.len().checked_ilog10().unwrap_or(0) + 1) as usize;
+            self.largest_user = max(self.largest_user, user);
+            self.largest_group = max(self.largest_group, group);
+        }
+        let inodes_test = ((*item).nlink.checked_ilog10().unwrap_or(0) + 1) as usize;
+        self.inodes_u = max(inodes_test, self.inodes_u);
+    }
+}
+
+impl Default for LargestItem {
+    fn default() -> Self {
+       Self {
+           longest_value: 0,
+           largest_file: 0,
+           largest_group: 0,
+           largest_user: 0,
+           inodes_u: 0
+       }
+    }
+}
+
 /// Different device types represented e.g. sockets, pipes files etc are denoted here
 #[derive(Debug, Clone)]
 enum DeviceType{
@@ -90,6 +128,7 @@ enum DeviceType{
 
 /// Each DirectoryItem is represted here using different parts sliced from the DirEntry struct
 #[derive(Debug, Clone)]
+#[allow(dead_code)]
 struct DirectoryItem <'a>{
     /// TODO uid, user, gid and group fields should be Options to prevent having
     ///      to set arguments unnessecarily
@@ -393,9 +432,7 @@ where T:  Ord {
 }
 
 
-//fn list_contents<'a>(dir: &'a Path, defaults: &'a Defaults) -> Vec<Box<DirectoryItem<'a>>> {
-fn list_contents<'a>(dir: &'a Path, defaults: &'a Defaults) -> Vec<Box<DirectoryItem<'a>>> {
-
+fn list_contents<'a>(dir: &'a Path, defaults: &'a Defaults, item_sizes: &mut LargestItem) -> Vec<Box<DirectoryItem<'a>>> {
     let mut outputs: Vec<Box<DirectoryItem>> = Vec::new();
     if dir.is_dir() {
         let paths = fs::read_dir(dir).unwrap();
@@ -407,10 +444,16 @@ fn list_contents<'a>(dir: &'a Path, defaults: &'a Defaults) -> Vec<Box<Directory
                 continue;
             }
             let new_value = Box::new(DirectoryItem::from_dir_entry(data, defaults));
+            if defaults.long_form{
+                item_sizes.update_values(&new_value, defaults);
+            }
             outputs.push(new_value);
         }
     }else{
         let file = Box::new(DirectoryItem::from_file(dir, defaults));
+        if defaults.long_form{
+            item_sizes.update_values(&file, defaults);
+        }
         outputs.push(file);
     }
     return outputs;
@@ -451,27 +494,21 @@ fn main(){
         all: args.all};
 
     let mut outputs: Vec<Box<DirectoryItem>> = Vec::new();
+    let mut item_sizes: LargestItem = Default::default();
     for path in args.files.iter(){
         let fp_path = Path::new(path);
         if !fp_path.exists(){
             eprintln!("Path does not exist: {}", fp_path.display());
             continue;
         }
-        let mut out = list_contents(fp_path, &defaults);
+        let mut out = list_contents(fp_path, &defaults, &mut item_sizes);
         outputs.append(&mut out);
     }
 
 
     // Get relevant values needed to sort or pad outputs
-    // TODO These values should be set when iterating the directorys in the future
-    // preventing the need for looping over everything else again...
     let mut longest_value: usize = 0;
     let mut files_per_row: usize = 0;
-    let mut largest_file: usize = 0;
-    let mut largest_group: usize = 0;
-    let mut largest_user: usize = 0;
-    let mut inodes: u64 = 0;
-    let mut inodes_u: usize = 0;
     if !defaults.long_form{
         longest_value =  match outputs.iter().map(|x| (*x).file_name_length()).max(){
             Some(x) => x + 1, // Add padding to variable for longest entry
@@ -487,25 +524,6 @@ fn main(){
 
         // Calculate how many values to print
         files_per_row = calculate_column_width(width, longest_value);
-    }else{
-        for val in outputs.iter() {
-            let largest_file_t = (*val).size().len();
-            let inodes_t = (*val).nlink;
-            largest_file = max(largest_file_t, largest_file);
-            if defaults.numeric_ids{
-                let largest_group_t = (*val).group.name.len();
-                let largest_user_t = (*val).user.name.len();
-                largest_group = max(largest_group_t, largest_group);
-                largest_user = max(largest_user_t, largest_user);
-            }
-            inodes = max(inodes_t, inodes);
-        }
-        // Get number of digits in the printed inodes representation
-        inodes_u = (inodes.checked_ilog10().unwrap_or(0) + 1) as usize;
-        if defaults.numeric_ids{
-            largest_group = (largest_group.checked_ilog10().unwrap_or(0) + 1) as usize;
-            largest_user = (largest_user.checked_ilog10().unwrap_or(0) + 1) as usize;
-        }
     }
 
 
@@ -531,7 +549,7 @@ fn main(){
     let mut idx = 1;
     for di in outputs.iter() {
         if defaults.long_form {
-            (*di).print_long(largest_file, largest_group, largest_user, inodes_u);
+            (*di).print_long(item_sizes.largest_file, item_sizes.largest_group, item_sizes.largest_user, item_sizes.inodes_u);
         }else{
             pad_value(&(*di), longest_value);
             if idx % files_per_row == 0 {
