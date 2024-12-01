@@ -23,6 +23,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - Fixed panic when path does not exist.
 
+- Optimized tracking of longest values.
+
 ## 0.0.1 - Initial release 
 
 ### Added
