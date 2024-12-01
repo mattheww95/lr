@@ -15,6 +15,10 @@ use std::path::Path;
 use std::os::unix::fs::{PermissionsExt, FileTypeExt};
 use clap::{Parser, ArgAction};
 
+// Currently just testing the ftp library
+mod ftp;
+
+
 
 const KIBIBYTE: u128 = 1024;
 const MEBIBYTE: u128 = u128::pow(KIBIBYTE, 2);

@@ -8,4 +8,5 @@ chrono = "0.4.34"
 clap = { version = "4.5.1", features = ["derive"] }
 colored = "2.1.0"
 nix = { version = "0.28.0", features = ["term", "user"] }
+suppaftp = { version = "^6", features = ["async-secure", "secure"] }
 term_size = "0.3.2"
