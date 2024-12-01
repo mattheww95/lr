@@ -5,7 +5,7 @@
 //!
 use std::fs::DirEntry;
 use chrono::NaiveDateTime;
-use std::fs::{FileType};
+use std::fs::FileType;
 use nix::unistd::{Group, Gid, User, Uid};
 use colored::{Colorize, ColoredString};
 use std::os::unix::fs::MetadataExt;
@@ -33,10 +33,10 @@ const YOBIBYTE: u128 = u128::pow(KIBIBYTE, 8);
 struct Cli {
 
     /// List of directories
-    #[clap(value_parser, num_args = 1.., value_delimiter=' ', default_value="./")]
+    #[clap(value_parser, num_args = 1.., value_delimiter=' ', default_value=".")]
     files: Vec<String>,
 
-    /// Colour files/folders by type, specify to disable colouring
+    /// Do not colour files/folders by type.
     #[clap(long, short, action=ArgAction::SetFalse, default_value_t=true)]
     colourize: bool,
 
@@ -53,12 +53,65 @@ struct Cli {
     #[clap(long, short, action=ArgAction::SetTrue)]
     all: bool,
 
+    /// Sort output files by size
+    #[clap(short='S', action=ArgAction::SetTrue)]
+    size: bool,
+
+    /// Sort output files by time last modified
+    #[clap(short='t', action=ArgAction::SetTrue)]
+    sort_time: bool,
+
+    /// Reverse output sorted or otherwise
+    #[clap(short, long, action=ArgAction::SetTrue)]
+    reverse: bool,
+
+    /// like -l, but list numeric user and group IDs
+    #[clap(short='n',long="numeric-uid-gid", action=ArgAction::SetTrue)]
+    numeric_uid_gid: bool,
 
     /// Print help message
     #[clap(long, action=ArgAction::HelpLong)]
     help: Option<bool>,
 }
 
+
+/// This struct is created to track the largest elements required for later formatting
+#[allow(dead_code)]
+struct LargestItem{
+    longest_value: usize,
+    largest_file: usize,
+    largest_group: usize,
+    largest_user: usize,
+    inodes_u: usize,
+}
+
+impl LargestItem {
+    fn update_values(&mut self, item: &Box<DirectoryItem>, defaults: &Defaults) {
+
+        self.largest_file = max(item.size().len(), self.largest_file);
+
+        if defaults.numeric_ids{
+            let group = (item.group.name.len().checked_ilog10().unwrap_or(0) + 1) as usize;
+            let user =  (item.user.name.len().checked_ilog10().unwrap_or(0) + 1) as usize;
+            self.largest_user = max(self.largest_user, user);
+            self.largest_group = max(self.largest_group, group);
+        }
+        let inodes_test = ((*item).nlink.checked_ilog10().unwrap_or(0) + 1) as usize;
+        self.inodes_u = max(inodes_test, self.inodes_u);
+    }
+}
+
+impl Default for LargestItem {
+    fn default() -> Self {
+       Self {
+           longest_value: 0,
+           largest_file: 0,
+           largest_group: 0,
+           largest_user: 0,
+           inodes_u: 0
+       }
+    }
+}
 
 /// Different device types represented e.g. sockets, pipes files etc are denoted here
 #[derive(Debug, Clone)]
@@ -75,7 +128,10 @@ enum DeviceType{
 
 /// Each DirectoryItem is represted here using different parts sliced from the DirEntry struct
 #[derive(Debug, Clone)]
+#[allow(dead_code)]
 struct DirectoryItem <'a>{
+    /// TODO uid, user, gid and group fields should be Options to prevent having
+    ///      to set arguments unnessecarily
     /// path_abs: Absolute path to file
     /// path_disp: They way the path is displayed e.g. passed to the program
     /// file_name: The basename of the file or directory
@@ -96,8 +152,10 @@ struct DirectoryItem <'a>{
     nlink: u64,
     mode: u32,
     group: Group,
+    gid: u32,
     size: u128,
     user: User,
+    uid: u32,
     executable: bool,
     defaults: &'a Defaults,
 }
@@ -109,10 +167,12 @@ struct Defaults {
     /// colourize: Denote if displayed values should be colourized
     /// human_readable: Marking if size values should be displayed in a human readable format
     /// long_form: list directories in long form
+    /// numeric_ids: display uids and gids in their numeric form
     /// all: Bool denoting if full path value should be displayed
     colourize: bool,
     human_readable: bool,
     long_form: bool,
+    numeric_ids: bool,
     all: bool,
 }
 
@@ -128,8 +188,10 @@ impl DirectoryItem<'_>  {
         if mode & 0o001 == 0o1 {
             executable = true;
         }
-        let group = Group::from_gid(Gid::from_raw(metadata.gid())).unwrap().unwrap();
-        let user = User::from_uid(Uid::from_raw(metadata.uid())).unwrap().unwrap();
+        let gid = metadata.gid();
+        let uid = metadata.uid();
+        let group = Group::from_gid(Gid::from_raw(gid)).unwrap().unwrap();
+        let user = User::from_uid(Uid::from_raw(uid)).unwrap().unwrap();
         let nlink = metadata.nlink();
         let time = metadata.ctime();
         let size = metadata.size();
@@ -140,8 +202,10 @@ impl DirectoryItem<'_>  {
             nlink: nlink,
             mode: mode,
             group: group,
+            gid: gid,
             size: size as u128,
             user:user,
+            uid: uid,
             executable: executable,
             path_abs: fs::canonicalize(path).unwrap().display().to_string(),
             path_disp: path_buf.display().to_string(),
@@ -196,8 +260,10 @@ impl DirectoryItem<'_>  {
             nlink: nlink,
             mode: mode,
             group: group,
+            gid: metadata.gid(),
             size: size as u128,
-            user:user,
+            user: user,
+            uid: metadata.uid(),
             executable: executable,
             path_abs: fs::canonicalize(path_buf.clone()).unwrap().display().to_string(),
             path_disp: path_buf.clone().display().to_string(),
@@ -247,7 +313,7 @@ impl DirectoryItem<'_>  {
     fn display_path(&self, display: &ColoredString) -> String {
         let out_str = match self.file_type {
             DeviceType::Symlink => if self.defaults.long_form {
-                format!("{} -> {}", self.path_disp, self.path_abs)
+                format!("{} -> {}", display, self.path_abs)
             } else {  
                 format!("{}", display)
             },
@@ -338,15 +404,35 @@ impl DirectoryItem<'_>  {
         }
     }
 
-    fn print_long(&self) {
-        println!("{} {} {} {} {} {} {}", self.permissions_string(), self.nlink, self.group.name, self.user.name, self.size(), self.time(), self.file_path());
+    fn print_long(&self, file_size_pad: usize, group_pad: usize, user_pad: usize, inodes: usize) {
+        if self.defaults.numeric_ids{
+            println!("{} {:<inode_p$} {:<gpad$} {:<upad$} {:<szpad$} {} {}",
+                 self.permissions_string(),
+                 self.nlink, self.gid, self.uid,
+                 self.size(), self.time(), self.file_path(), inode_p=inodes,
+                 gpad=group_pad, upad=user_pad, szpad=file_size_pad);
+        }else{
+            println!("{} {:<inode_p$} {:<gpad$} {:<upad$} {:<szpad$} {} {}",
+                 self.permissions_string(),
+                 self.nlink, self.group.name, self.user.name,
+                 self.size(), self.time(), self.file_path(), inode_p=inodes,
+                 gpad=group_pad, upad=user_pad, szpad=file_size_pad);
+        }
     }
 }
 
 
-//fn list_contents<'a>(dir: &'a Path, defaults: &'a Defaults) -> Vec<Box<DirectoryItem<'a>>> {
-fn list_contents<'a>(dir: &'a Path, defaults: &'a Defaults) -> Vec<Box<DirectoryItem<'a>>> {
+fn max<T>(v1: T, v2: T) -> T
+where T:  Ord {
+   if v1 > v2 {
+       v1
+   }else {
+       v2
+   }
+}
 
+
+fn list_contents<'a>(dir: &'a Path, defaults: &'a Defaults, item_sizes: &mut LargestItem) -> Vec<Box<DirectoryItem<'a>>> {
     let mut outputs: Vec<Box<DirectoryItem>> = Vec::new();
     if dir.is_dir() {
         let paths = fs::read_dir(dir).unwrap();
@@ -358,10 +444,16 @@ fn list_contents<'a>(dir: &'a Path, defaults: &'a Defaults) -> Vec<Box<Directory
                 continue;
             }
             let new_value = Box::new(DirectoryItem::from_dir_entry(data, defaults));
+            if defaults.long_form{
+                item_sizes.update_values(&new_value, defaults);
+            }
             outputs.push(new_value);
         }
     }else{
         let file = Box::new(DirectoryItem::from_file(dir, defaults));
+        if defaults.long_form{
+            item_sizes.update_values(&file, defaults);
+        }
         outputs.push(file);
     }
     return outputs;
@@ -389,42 +481,75 @@ fn pad_value(input: &DirectoryItem, length: usize){
     print!("{}", spaces);
 }
 
-fn main(){
 
+fn main(){
+    // TODO Need to quote special charactars outputs
+    // TODO add author flag
     let args = Cli::parse();
     let defaults = Defaults{
         colourize: args.colourize, 
         human_readable: args.human,
         long_form: args.long,
+        numeric_ids: args.numeric_uid_gid,
         all: args.all};
 
     let mut outputs: Vec<Box<DirectoryItem>> = Vec::new();
+    let mut item_sizes: LargestItem = Default::default();
     for path in args.files.iter(){
-        let mut out = list_contents(path.as_ref(), &defaults);
+        let fp_path = Path::new(path);
+        if !fp_path.exists(){
+            eprintln!("Path does not exist: {}", fp_path.display());
+            continue;
+        }
+        let mut out = list_contents(fp_path, &defaults, &mut item_sizes);
         outputs.append(&mut out);
     }
 
-    // Sort or manipulate outputs as needed
-    let mut longest_value = outputs.iter().map(|x| (*x).file_name_length()).max().unwrap();
-    longest_value = longest_value + 1; // Adding 1 to make room for the printed space
 
-    // Get Term size for creating the output file
-    #[allow(unused_assignments)]
-    let mut width: usize = 0;
-    if let Some((w, _)) = term_size::dimensions() {
-        width = w;
-    } else {
-        panic!()
+    // Get relevant values needed to sort or pad outputs
+    let mut longest_value: usize = 0;
+    let mut files_per_row: usize = 0;
+    if !defaults.long_form{
+        longest_value =  match outputs.iter().map(|x| (*x).file_name_length()).max(){
+            Some(x) => x + 1, // Add padding to variable for longest entry
+            None => return (),
+        };
+
+        // Get Term size for creating the output file
+        #[allow(unused_assignments)]
+        let (width, _) = match term_size::dimensions() {
+            Some(x) => x,
+            None => panic!(),
+        };
+
+        // Calculate how many values to print
+        files_per_row = calculate_column_width(width, longest_value);
     }
 
-    // Calculate how many values to print
-    let files_per_row = calculate_column_width(width, longest_value);
+
+    // Perform sorting options here
+    if args.size{
+        outputs.sort_by_key(|a| (*a).size());
+    }
+
+    if args.sort_time {
+        outputs.sort_by_key(|a| (*a).time);
+    }
+
+    if args.reverse {
+        outputs.reverse();
+    }
+
+    // Additional outputs needed to be printed e.g. for long form
+    if defaults.long_form {
+        println!("total {}", outputs.len());
+    }
 
     // Print outputs
     let mut idx = 1;
     for di in outputs.iter() {
         if defaults.long_form {
-            (*di).print_long();
+            (*di).print_long(item_sizes.largest_file, item_sizes.largest_group, item_sizes.largest_user, item_sizes.inodes_u);
         }else{
             pad_value(&(*di), longest_value);
             if idx % files_per_row == 0 {
